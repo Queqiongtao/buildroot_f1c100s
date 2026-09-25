@@ -33,8 +33,8 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		reg = <0>;
-		compatible = "winbond,w25q128", "jedec,spi-nor";
-		spi-max-frequency = <80000000>;
+		compatible = "gigadevice,gd25q128", "jedec,spi-nor";
+		spi-max-frequency = <50000000>;
 	};
 
 	spi-nand@1 {

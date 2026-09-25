@@ -6,9 +6,11 @@
 # 数据与系统分属不同分区, DFU 刷机(uboot/boot/rootfs 三个 alt)只重写系统,
 # 数据分区从不被刷机触碰 -- 全刷即保数据升级。
 #
-# 两条路径统一 upper=/overlay/upper, work=/overlay/work, 差异只在:
+# 三条路径统一 upper=/overlay/upper, work=/overlay/work, 差异只在:
 #   NAND: lower = 内核挂好的 ro UBIFS 根(ubi0 = rootfs 分区),
 #         /overlay = ubi1(data 分区, 由 ubi.mtd=data 附加)的 rootfs_data 卷
+#   NOR:  lower = 内核挂好的 ro squashfs 根(mtdblock rootfs 分区),
+#         /overlay = mtdblock data 分区(JFFS2)
 #   SD:   lower = 容器里 loop 挂载的 /rootfs.squashfs (容器=p2),
 #         /overlay = p3 data 分区(ext4)
 #
@@ -36,9 +38,11 @@ mount -t proc proc /proc || die "cannot mount /proc"
 # 不挂 sysfs 会报 "UBI is not present in the system"
 mount -t sysfs sysfs /sys || die "cannot mount /sys"
 root=
+overlaydev=
 for x in $(cat /proc/cmdline); do
     case "$x" in
         root=*) root="${x#root=}" ;;
+        overlayfsdev=*) overlaydev="${x#overlayfsdev=}" ;;
     esac
 done
 
@@ -69,6 +73,17 @@ case "$root" in
                 || die "data mount failed after mkfs"
         fi
         lower=/rom
+        ;;
+    /dev/mtdblock*)
+        lower=/
+        if ! mount -t jffs2 -o rw,noatime "$overlaydev" /overlay; then
+            echo "preinit: data partition mount failed, rebuilding data partition" > /dev/kmsg
+            mtdnum=${overlaydev#/dev/mtdblock}
+            [ -n "$mtdnum" ] || die "no data mtd partition"
+            flash_erase -j "/dev/mtd${mtdnum}" 0 0 || die "flash_erase data failed"
+            mount -t jffs2 -o rw,noatime "$overlaydev" /overlay \
+                || die "data mount failed after erase"
+        fi
         ;;
     *)
         die "unsupported root=$root"
